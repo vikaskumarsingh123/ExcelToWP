@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Creates API Gateway, lambda functions, SQS, s3 bucket and Cloudfront distribution to:
+  1) Recieve batch of resources
+  2) Store them to DynamoDB
+  3) Put them into an SQS
+  4) Lambda is trigerred by SQS (queue has 2 set as the limit of concurent lambda invocations)
+  5) This Lambda downloads the pdf and word files and uploads the resource to the WP website, and then stores the errors/results in the Dynamo DB
+  6) S3 to store the build of Angular (the is automatically uploaded to the s3 in the custom deploy command of the angular side) - https://aws.plainenglish.io/deploy-react-web-app-on-aws-s3-and-cloudfront-using-cloudformation-via-aws-sam-cli-409aa479063d
+  7) Cloudfront with HTTPS that passes requests (even 404s) onto the index.html file of the s3 - https://aws.plainenglish.io/deploy-react-web-app-on-aws-s3-and-cloudfront-using-cloudformation-via-aws-sam-cli-409aa479063d
+
+  
+Globals:
+  Function:
+    Timeout: 30
+  Api:
+    Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'content-type'"
+        AllowOrigin: "'*'"
+
+
+#Step 1: Function to handle DynamoDB CRUD and the DynamoDB creation
+Resources:
+  DDBHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dynamo-handler/
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Environment:
+        Variables:
+          ENTRIES_QUEUE_URL: !Ref TheQueue
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ItemsTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt TheQueue.QueueName
+      Events:
+        VerifyCORS:
+          Type: HttpApi
+          Properties:
+            Path: /items
+            Method: OPTIONS
+        GetAllItems:
+          Type: HttpApi
+          Properties:
+            Path: /items
+            Method: GET
+        GetBatchItems:
+          Type: HttpApi
+          Properties:
+            Path: /items/batch/{batch_id}
+            Method: GET
+        GetAnItem:
+          Type: HttpApi
+          Properties:
+            Path: /items/{id}
+            Method: GET
+        DeleteAnItem:
+          Type: HttpApi
+          Properties:
+            Path: /items/{id}
+            Method: DELETE
+        CreateOrUpdateItem:
+          Type: HttpApi
+          Properties:
+            Path: /items
+            Method: PUT
+
+  ItemsTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      TableName: ExcelToWPEntries
+
+
+  #Step 2: The SQS queue and the function that is invoked for each item in the SQS queue
+  TheQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: EntriesSQS
+
+  ProcessEntries:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: process-entries/
+      Handler: app.handler
+      Runtime: nodejs18.x
+      Events:
+        TheQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TheQueue.Arn
+            BatchSize: 1
+            Enabled: true
+            ScalingConfig:
+              MaximumConcurrency: 2
+
+              
+  #Step 3: Angular application hosting https://aws.plainenglish.io/deploy-react-web-app-on-aws-s3-and-cloudfront-using-cloudformation-via-aws-sam-cli-409aa479063d
+  WebAppS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-web-app-s3-bucket"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebAppS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebAppS3Bucket
+      PolicyDocument:
+        Id: PolicyForCloudFrontPrivateContent
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${AWS::StackName}-web-app-s3-bucket/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  WebAppOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-web-app-origin-access-control"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt WebAppS3Bucket.RegionalDomainName
+            Id: !Sub "${AWS::StackName}-web-app-s3-origin"
+            OriginAccessControlId: !GetAtt WebAppOriginAccessControl.Id
+            S3OriginConfig: {}
+        Enabled: "true"
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: !Sub "${AWS::StackName}-web-app-s3-origin"
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf # CORS-S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_All
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+Outputs:
+  ApiEndpoint:
+    Description: "The invoke URL for our HTTP API"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
+  Function:
+    Description: "DynamoDB handler function ARN"
+    Value: !GetAtt DDBHandlerFunction.Arn
+  WebAppDomain:
+    Description: "The angular build is accessible here by the public"
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  CloudFrontDistributionId:
+    Value: !GetAtt CloudFrontDistribution.Id
+  WebAppS3BucketName:
+    Value: !Ref WebAppS3Bucket

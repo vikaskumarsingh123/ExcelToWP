@@ -1,0 +1,25 @@
+/* You can add global styles to this file, and also import other style files */
+$primary_font_family: 'Tahoma', sans-serif;
+
+
+.flex{
+    display: flex;
+}
+
+.flex-spacing-1{
+    gap: 1vmin;
+}
+
+.full-page-center{
+    display: flex;
+    height: 90vh;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.container{
+    width: min( 1600px, 90vw);
+    margin-left:auto;
+    margin-right:auto;
+}
