@@ -3,7 +3,7 @@
         <p>Following resources ({{resources.length}}) were queued recently:
         </p>
         <p [style]="{'flex-grow': 1,  'text-align': 'right'}">
-            <p-button label="Cancel Processing" icon="pi pi-times" ></p-button>
+            <!-- <p-button label="Cancel Processing" icon="pi pi-times" ></p-button> -->
         </p>
         
     </div>
@@ -23,10 +23,20 @@
                     <td>{{ newResource.Title }}</td>
                     <td>{{ newResource.Description }}</td>
                     <td>{{ newResource.pdfUrl }}</td>
-                    <td><i class="pi {{ getStatusIconClass(newResource.Status) }}"></i> </td>                
+                    <td>
+                        <a href="{{ newResource.WordpressLink.length > 1 ? newResource.WordpressLink : '#' }}" >
+                            <i title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
+                        </a>
+                    </td>                
                 </tr>
             </ng-template>
         </p-table>
+        <div *ngIf="loadingResources">
+            <i class="pi pi-spin pi-spinner"></i>
+        </div>
+        <div *ngIf="emptyResources">
+            <p>No resources found! Please upload some resources before checking their progress here.</p>
+        </div>
     </p-scrollPanel>
     
 </div>

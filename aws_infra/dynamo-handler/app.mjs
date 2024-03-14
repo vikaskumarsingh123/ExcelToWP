@@ -3,7 +3,6 @@ import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import {
   DynamoDBDocumentClient,
   ScanCommand,
-  PutCommand,
   GetCommand,
   DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -18,14 +17,16 @@ const uploadStatus = Object.freeze({
 /**
  * Takes a resource in the IResource frontend interface and sets it up to be inserted/updated in the DynamoDB database in the variable type: value format
  */
-function convertToDynamoDBItem ( newResource ) {
+function convertToDynamoDBItem ( newResource ) { //this must be the same as the dynamodb table format defined in the /aws_infra/template.yaml file
   return {
     pdfUrl: { S: newResource.pdfUrl},
     Title: { S: newResource.Title },
     Description: { S: newResource.Description },
     Status: { N: `${newResource.Status}` },
     batchId: { S: newResource.batchId },
-    id: { S: newResource.id }
+    id: { S: newResource.id },
+    WordpressLink: { S: '' },
+    ErrorMesg: { S: '' }
   }
 }
 
@@ -127,6 +128,19 @@ export const handler = async (event, context) => {
           
           body = 'Put items in successfully and queued them up.';
         } else body = 'Failed to add resource - no resources provided';
+        break;
+      case "GET /items/batch/{batch_id}":
+        body = await dynamo.send(
+          new ScanCommand({
+            TableName: tableName,
+            FilterExpression:
+              "batchId = :the_Batch_Id",
+            ExpressionAttributeValues: {
+              ":the_Batch_Id": event.pathParameters.batch_id
+            },
+          })
+        );
+        body = body.Items;
         break;
       default:
         console.log('Unsupported route');

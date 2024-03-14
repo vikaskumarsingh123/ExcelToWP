@@ -30,7 +30,7 @@ export class UploadComponent {
     showFileSelect: boolean = true;
     batchGUID = GuidGenerator.newGuid();
     batchProcessingStatus = uploadStatus.NOT_STARTED; //follows the same status as individual resources
-
+    watchProgressInterval : ReturnType<typeof setInterval> = setTimeout( () => null , 1); //this interval is created after the resources are uploaded and is used to fetch the progress of the upload.
 
 
     constructor(private http: HttpClient){
@@ -87,6 +87,11 @@ export class UploadComponent {
      * Pushes the current resources to the Amazon API endpoint, where it is stored in our DynamoDB, then queued in an SQS where it is picked up by a Lambda function that processes it (process-entries.mjs file).
      */
     uploadResources(){
+      
+      //lets make all of them processing status, so that the correct status gets passed on to the API and reflects here on frontend
+      for(var i = 0; i < this.newResources.length ; i++){
+        this.newResources[i].Status = uploadStatus.PROCESSING;
+      }
       if( this.batchProcessingStatus != uploadStatus.PROCESSING ){ //only do things if not already doing things
         this.http.put<any>(APIGateway_base + 'items', {newResources : this.newResources})
         .pipe(
@@ -98,15 +103,46 @@ export class UploadComponent {
             throw 'Error with API. Details: ' + err;
           } )
         ).subscribe( (res) =>{
-          console.log(res);
-          for(var i = 0; i < this.newResources.length ; i++){
-            this.newResources[i].Status = uploadStatus.PROCESSING;
-          }
-          this.batchProcessingStatus = uploadStatus.FAILED; //make our big Start Upload button be processing icon and disalbed for future clicks.
+          this.batchProcessingStatus = uploadStatus.PROCESSING; //make our big Start Upload button be processing icon and disalbed for future clicks.
+          this.watchProgressInterval = setInterval( this.watchProgress.bind(this), 1500); //start watching for progress by reading status on the API.
         } );
       }
       return true;
     }
+
+
+    /**
+     * Starts watching for progress by reading the API
+     */
+    watchProgress(){
+      this.http.get<any>(APIGateway_base + 'items/batch/' + this.batchGUID)
+      .pipe(
+        catchError( err => {
+          this.batchProcessingStatus = uploadStatus.FAILED;
+          throw 'Error with API. Details: ' + err;
+        } )
+      ).subscribe( (res) =>{
+        console.log(`Length of new resources is currently ${this.newResources.length}`);
+        for(var i = 0; i < this.newResources.length ; i++){
+          var matched_resource_from_API = res.find( (res_single: { id: any; }) => res_single.id == this.newResources[i].id );
+          this.newResources[i].Status = matched_resource_from_API.Status; 
+          this.newResources[i].ErrorMesg = matched_resource_from_API.ErrorMesg; 
+          this.newResources[i].WordpressLink = matched_resource_from_API.WordpressLink; 
+          console.log(`Status for ${this.newResources[i].Title} is ${this.newResources[i].Status}`);
+        }
+
+         //lets check if none of the resources are in processing state (so either failed or successful)
+         var filtered_res = this.newResources.filter( (res) => res.Status == uploadStatus.PROCESSING );
+         console.log(filtered_res);
+         if(filtered_res.length == 0){
+           console.log('Processing finished for all resources, stopping polling API for progress.');
+           clearInterval(this.watchProgressInterval);
+           this.batchProcessingStatus = uploadStatus.SUCCESS;
+         }
+
+      } )
+    }
+
 
 
 

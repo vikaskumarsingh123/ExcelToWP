@@ -25,6 +25,9 @@ import { IResource } from './IResource';
 export class ProgressComponent {
     title : string = 'Progress of Uploads';
     resources: Array<IResource> = [];
+    emptyResources : boolean = false;
+    loadingResources : boolean = true; //it will start loading asap. This variable helps show a spinner until then.
+    processingResources : boolean = false; //is set to true if all resources are currently processing. This way, you can cancel processing for all resources that are currently processing.
 
     constructor(private http: HttpClient){
       this.getResources();
@@ -51,7 +54,12 @@ export class ProgressComponent {
         } )
       ).subscribe( (res) =>{
         this.resources = res;
+        if(res.length < 1) this.emptyResources = true; //so we can show the message that no resources found.
         console.log(res);
+      } )
+      .add(() => {
+        // Either fail or succeed
+        this.loadingResources = false;
       } );
       return true;
     }

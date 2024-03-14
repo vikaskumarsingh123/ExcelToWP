@@ -2,6 +2,12 @@
 
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.0.7.
 
+Use `npm run deploy` to deploy to your AWS. The info for this is in the deploy.js file.
+If you change the template.yaml file you will have to delete the s3 bucket and the cloudformation stack (in that order).
+To delete cloudformation stack: `aws cloudformation delete-stack --stack-name STACK_NAME`
+
+Make sure you are logged into your aws using `aws sso login` before you initiate deploy.
+
 ## Development server
 
 Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.

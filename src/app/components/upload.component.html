@@ -37,7 +37,12 @@
                     <td>{{ newResource.pdfUrl }}</td>
                     <td>{{ newResource.wordUrl }}</td>
                     <td>{{ newResource.Keywords }}</td>
-                    <td><i class="pi {{ getStatusIconClass(newResource.Status) }}"></i> </td>                
+                    <td>
+                        <a ngIf="newResource.Status == 3" href="{{ (newResource.WordpressLink && newResource.WordpressLink.length > 1) ? newResource.WordpressLink : '' }}" >
+                            <i title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
+                        </a>
+                        <i ngIf="newResource.Status != 3" title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
+                    </td>             
                 </tr>
             </ng-template>
         </p-table>
