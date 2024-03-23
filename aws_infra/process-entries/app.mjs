@@ -6,8 +6,10 @@ import {
 
 import * as https from 'https';
 import * as fs from 'fs';
+import * as path from 'path';
 import { wordpress_config } from "./credentials.mjs";
 import { table } from "console";
+import { cleanString, convertCategoriesToArray } from "./helperfunctions.mjs";
 
 const uploadStatus = Object.freeze({
   NOT_STARTED: 0,
@@ -91,23 +93,45 @@ async function processMessage(newResource) {
     var wp_media_url = wp_url + "/media"
 
 
-    //lets upload the PDF file first
-    if(newResource.pdfUrl != '' && newResource.pdfUrl != null){
+    //lets download and upload the PDF file first
+    if(newResource.pdfUrl != '' && newResource.pdfUrl != null && newResource.pdfUrl.includes('http')){
       console.log("Downloading file...");
       newResource.pdfLocalUrl = await downloadFile(newResource.pdfUrl, 'resourcepdf.pdf');
-      console.log("Uploading file to WP...");
+      console.log("Uploading PDF file to WP...");
       var pdf_upload_return = await uploadFileToWP(wp_media_url, newResource.pdfLocalUrl);
       console.log("PDF Upload Return says:");
       console.log(pdf_upload_return);
-    }
+    } else pdf_upload_return = null;
+
+    //lets download and upload the word file
+    if(newResource.wordUrl != '' && newResource.wordUrl != null && newResource.wordUrl.includes('http') ){
+      console.log("Downloading file...");
+      newResource.wordLocalUrl = await downloadFile(newResource.wordUrl, 'resourceword.docx');
+      console.log("Uploading word file to WP...");
+      var word_upload_return = await uploadFileToWP(wp_media_url, newResource.wordLocalUrl);
+      console.log("Word Upload Return says:");
+      console.log(word_upload_return);
+    } else word_upload_return = null;
     
+    var tags_numerical_array = await createRetreiveTags(newResource.Keywords.split(/[;,]+/) ); //splits the Keywords string on the basis of ; and ,
+    var authors = (newResource?.Author?.includes(';') || newResource?.Author?.includes(',')) ? newResource?.Author?.split(/[;,]+/).map( s => s.trim() ) : [ newResource?.Author?.trim() ] ; //split author by ; or , OR just trim the single author. 
+    var organisations = (newResource?.Organisation?.includes(';') || newResource?.Organisation?.includes(',')) ? newResource?.Organisation?.split(/[;,]+/).map( s => s.trim() ) : [ newResource?.Organisation?.trim() ]; //split orgainsation by ; or , OR just trim the single organisation. 
 
     var post_data = {
-      "title": Buffer.from((newResource.Title ?? 'Unknown Title'), 'utf-8').toString(), // ensure it is UTF8 or WP Rest API does not like it.
-      "content": Buffer.from((newResource.Description ?? 'No Desc'), 'utf-8').toString(),
+      "title": cleanString(Buffer.from((newResource.Title ?? 'Unknown Title'), 'utf-8').toString()), // ensure it is UTF8 or WP Rest API does not like it.
+      "content": cleanString(Buffer.from((newResource.Description ?? 'No Desc'), 'utf-8').toString()),
       "comment_status": "closed",
       "status": "draft",
-      //"featured_media": featured_media_id
+      "categories": convertCategoriesToArray(newResource.Pillar),
+      "tags": tags_numerical_array,
+      "acf": {
+        "year_published": newResource?.Year?.toString(),
+        "language": cleanString(Buffer.from((newResource.Language ?? ''), 'utf-8').toString()),
+        "pdf_version": (pdf_upload_return != null && pdf_upload_return.length > 1) ? (JSON.parse(pdf_upload_return)).id : null,
+        "word_version": (word_upload_return != null && word_upload_return.length > 1) ? (JSON.parse(word_upload_return)).id : null,
+        "resource_author": authors,
+        "organisation_resource": organisations,
+      }
     };
 
     console.log("Sending to WP Rest API");
@@ -116,8 +140,6 @@ async function processMessage(newResource) {
     console.log(return_from_api);
 
     return return_from_api;
-  
-  
 }
 
 /** 
@@ -128,12 +150,11 @@ async function processMessage(newResource) {
 */
 function postToWP(url, data) {
   var dataString = JSON.stringify(data);
-  dataString = Buffer.from(dataString.replace(/[’]/gm, ''), 'utf-8').toString(); //make sure its UTF8 or else WP Rest API throws a fit.
 
   const options = {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
       'Content-Length': dataString.length,
       'Authorization': 'Basic ' + token
     },
@@ -188,7 +209,7 @@ function uploadFileToWP(url, file_local_url) {
   const options = {
     method: 'POST',
     headers: {
-      'Content-Disposition': 'form-data; filename="resource.pdf"',
+      'Content-Disposition': 'form-data; filename="' + path.basename(file_local_url) + '"',
       'Content-Length': file_size,
       'Authorization': 'Basic ' + token,
       'Content-type': 'application/pdf'
@@ -258,7 +279,7 @@ async function downloadFile(file_url, default_file_name){
     const req = https.get(file_url, (res) => {
       
       const file = fs.createWriteStream(dest);
-      res.pipe(file);      
+      res.pipe(file);
 
       file.on('finish', () => {
           file.close(); 
@@ -268,7 +289,7 @@ async function downloadFile(file_url, default_file_name){
     })
 
     req.on('error', (err) => {
-      reject(err)
+      reject(new Error(`Could not download the file (${file_url}). Error was ${err}`));
     })
 
     req.on('timeout', () => {
@@ -315,3 +336,47 @@ async function updateDb(resource_id, status, post_url, errorMesg = '' ){
   }
   return true;
 }
+
+/** 
+* Convert tags to tag IDs.
+* Uses the WP Batch API, posts each tag as a new tag, and then returns the Tag IDs produced by WP
+* @param {tags} array - String array of tags
+* @return {array} Integer array of tags
+*/
+async function createRetreiveTags(tags){
+  
+  tags = tags.map(s => s.trim()); //some basic sanitization - trimming the ends of each tag 
+
+  var tagIds = []; //to store the id of the tags returned from WP rest api here
+  var batchReq = { "requests" : [] }; //object to store array of our batch request
+
+  var batch_post_url = "https://" + wordpress_config.website_url + "/wp-json/batch/v1"; //this is where we post the batch request
+
+  tags.forEach( tag => {
+    //for each tag create the batch request
+    batchReq.requests.push({
+      "method": "POST",
+      "path": "/wp/v2/tags",
+      "body": { "name" : tag }
+    })
+  });
+
+  var batch_post_result_string = await postToWP(batch_post_url,batchReq);
+  try{
+    var batch_post_result_json = JSON.parse(batch_post_result_string);
+  } catch (error){
+    console.log("JSON parsing of create tags step failed");
+    new Error("Could not create tags. WP REST API said: " + batch_post_result_string); 
+  }
+
+  tagIds = batch_post_result_json.responses.map( (batch_response) =>  ("code" in batch_response.body && batch_response.body.code == 'term_exists') ?
+     batch_response.body.data?.term_id : 
+      batch_response.body.id 
+  )
+  console.log("Retreived tag ids as:");
+  console.log(tagIds);
+
+  return tagIds;
+}
+
+

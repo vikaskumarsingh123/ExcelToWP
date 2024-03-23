@@ -31,7 +31,7 @@ export class UploadComponent {
     batchGUID = GuidGenerator.newGuid();
     batchProcessingStatus = uploadStatus.NOT_STARTED; //follows the same status as individual resources
     watchProgressInterval : ReturnType<typeof setInterval> = setTimeout( () => null , 1); //this interval is created after the resources are uploaded and is used to fetch the progress of the upload.
-
+    allowUploadStart : boolean = true; //lets assume the provided file is error free and then we check it and disable the button only after sanity checks for the resources have failed
 
     constructor(private http: HttpClient){
       this.reader = new FileReader();
@@ -57,7 +57,7 @@ export class UploadComponent {
      */
     extractKeywordsFromDesc( desc : string ) : string{
       let keywords : string = '';
-      if(desc.includes('Keywords:')){
+      if(desc && desc.includes('Keywords:')){
         let keywords_arr : Array<string> = [];
         keywords_arr = desc.split('Keywords:');
         keywords = (keywords_arr.splice(-1))[0]; //get the last part of the array
@@ -73,7 +73,7 @@ export class UploadComponent {
      */
     extractContentFromDesc( desc : string ) : string{
       let keywords : string = desc;
-      if(desc.includes('Keywords:')){
+      if(desc && desc.includes('Keywords:')){
         let keywords_arr : Array<string> = [];
         keywords_arr = desc.split('Keywords:');
         keywords = keywords_arr[0]; //get the first part of the array
@@ -180,11 +180,43 @@ export class UploadComponent {
           id: GuidGenerator.newGuid()
         }) ); 
         
+        //lets check them for errors
+        this.prePublishErrorCheck();
+
+        console.log("Identified resources: ");
+        console.log(this.newResources);
+
         //now hide the file selector
         this.showFileSelect = false;
       }
       
     }
+
+    /**
+     * Lets check each resource for errors, and if errors exist, we dont let the user 'Start Upload'
+     */
+    prePublishErrorCheck() {
+      for(var i = 0 ; i < this.newResources.length ; i++ ){
+        if( !('Title' in this.newResources[i]) || this.newResources[i].Title.length < 1 ) this.markResourcePreUploadError(i, 'This resource does not have a title');
+        if( 'pdfUrl' in this.newResources[i] && !this.isValidUrl(this.newResources[i].pdfUrl) ) this.markResourcePreUploadError(i, 'This PDF file link does not look like a valid URL');
+        if( 'wordUrl' in this.newResources[i] && !this.isValidUrl(this.newResources[i].wordUrl) ) this.markResourcePreUploadError(i, 'This Word file link does not look like a valid URL');
+      }
+    }
+
+    markResourcePreUploadError(i : number, error_msg : string){
+      this.allowUploadStart = false;
+      this.newResources[i].ErrorMesg = 'Pre Upload Error: ' + error_msg;
+      this.newResources[i].Status = uploadStatus.FAILED;
+    }
+
+    isValidUrl(string : string) {
+      try {
+        var url = new URL(string);
+        return (url.protocol == 'http:' || url.protocol == 'https:')
+      } catch (err) {
+        return false;
+      }
+    }    
 
 }
 

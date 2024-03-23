@@ -13,10 +13,11 @@
             Please verify they are correct and press the <b>Start Upload</b> button to send this batch (Batch ID: {{ batchGUID }}) to the website.
         </p>
         <p [style]="{'flex-grow': 1,  'text-align': 'right'}">
-            <p-button label="Start Upload" icon="pi {{ getStatusIconClass(batchProcessingStatus) }}" (onClick)="uploadResources()" ></p-button>
+            <p-button label="Start Upload" icon="pi {{ getStatusIconClass(batchProcessingStatus) }}" (onClick)="uploadResources()" [disabled]="!allowUploadStart" ></p-button>
         </p>
         
     </div>
+    <div *ngIf="!allowUploadStart" class="error" ><p>The provided file has errors in resources. Please find red rows in the list below, and hover your mouse on the info icon on the right of the row to view the error. Then please resolve the error in the excel file and <a href='/upload'>choose a new file</a></p></div>
     <p-divider></p-divider>
     <p-scrollPanel [style]="{ width: '100%', height: '80vh' }">
         <p-table [value]="newResources" [tableStyle]="{ 'min-width': '50rem', 'border': '1px solid silver' }"styleClass="p-datatable-sm p-datatable-gridlines p-datatable-striped ">
@@ -31,17 +32,17 @@
                 </tr>
             </ng-template>
             <ng-template pTemplate="body" let-newResource>
-                <tr>
+                <tr class="{{ newResource?.ErrorMesg?.length > 0 ? 'error' : '' }}">
                     <td>{{ newResource.Title }}</td>
                     <td>{{ newResource.Description }}</td>
                     <td>{{ newResource.pdfUrl }}</td>
                     <td>{{ newResource.wordUrl }}</td>
                     <td>{{ newResource.Keywords }}</td>
                     <td>
-                        <a ngIf="newResource.Status == 3" href="{{ (newResource.WordpressLink && newResource.WordpressLink.length > 1) ? newResource.WordpressLink : '' }}" >
+                        <a *ngIf="newResource.Status == 3" href="{{ (newResource.WordpressLink && newResource.WordpressLink.length > 1) ? newResource.WordpressLink : '' }}" target="_blank" >
                             <i title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
                         </a>
-                        <i ngIf="newResource.Status != 3" title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
+                        <i *ngIf="newResource.Status != 3" title="{{ newResource.ErrorMesg }}" class="pi {{ getStatusIconClass(newResource.Status) }}"></i>
                     </td>             
                 </tr>
             </ng-template>

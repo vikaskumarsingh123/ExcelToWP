@@ -94,10 +94,14 @@ export const handler = async (event, context) => {
         let requestJSON = JSON.parse(event.body);
         let newResources = requestJSON.newResources ?? [];
         if(newResources.length > 0 ){
-          var resourceEntries = newResources.map ( (newResource) => {
-            return { PutRequest: { Item: convertToDynamoDBItem(newResource) } } ;
-          });
           
+          var resourceEntries = [];
+          newResources.forEach(
+            (newResource) => {
+              if(newResource.Title.length > 2) resourceEntries.push( { PutRequest: { Item: convertToDynamoDBItem(newResource) } } ) //only add resources that have atleast a title
+            }
+          );
+
           //put them into DynamoDB
           await dynamo.send(
             new BatchWriteItemCommand({ // batchwrite command documentation here: https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/dynamodb-example-table-read-write-batch.html
