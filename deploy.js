@@ -49,7 +49,7 @@ const uploadFiles = (stack_name) => {
         exit(1);
     } 
   console.log(`Uploading files from ${sourceDir} to s3://${s3BucketName}`);
-  child_process.execSync(`aws s3 sync ${sourceDir} s3://${s3BucketName}`, { stdio: "inherit" });
+  child_process.execSync(`aws s3 sync "${sourceDir}" s3://${s3BucketName}`, { stdio: "inherit" });
 };
 
 
@@ -85,7 +85,7 @@ readline.question(`Please enter a name for the stack to be created on AWS (only 
         clearCloudFrontCache(stack_name); 
 
         const domain = getCloudFormationOuputValue(stack_name,"WebAppDomain");
-        console.log(`Deployment done, visit https://${domain}`);
+        console.log(`Deployment done, the tool is available on https://${domain}. Please ensure you put this manually link in the wp-plugin PHP file.`);
     } catch{
         console.log(`Something went wrong! Please have a look at the console log above.`);
     }

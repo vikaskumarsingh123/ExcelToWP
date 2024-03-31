@@ -5,6 +5,7 @@
         <p-fileUpload mode="basic" chooseLabel="Select File" name="inputFile" selectIcon="pi pi-arrow-down"  accept=".xlsx,.xls,.csv,.xlsm" [maxFileSize]="maxFileSizeInBytes" (onSelect)="processFile($event)"></p-fileUpload>
         <p-button routerLink="/" label="Back" icon="pi pi-arrow-left"></p-button>
     </div>
+    <p>Looking for the upload template? <a href='/assets/Excel To WP - Upload Template.csv'>Download here</a></p>
 </div>
 
 <div *ngIf="!showFileSelect" class="container">
