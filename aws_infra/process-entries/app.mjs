@@ -113,8 +113,16 @@ async function processMessage(newResource) {
       console.log(word_upload_return);
     } else word_upload_return = null;
     
-    var tags_numerical_array = await createRetreiveTags(newResource.Keywords.split(/[;,]+/) ); //splits the Keywords string on the basis of ; and ,
+    
+    
+    if(newResource.Keywords.length > 2){
+      var tags_numerical_array = await createRetreiveTags(newResource.Keywords.split(/[;,]+/)); //splits the Keywords string on the basis of ; and ,  
+    } 
+    
+    
+    
     var authors = (newResource?.Author?.includes(';') || newResource?.Author?.includes(',')) ? newResource?.Author?.split(/[;,]+/).map( s => s.trim() ) : [ newResource?.Author?.trim() ] ; //split author by ; or , OR just trim the single author. 
+    newResource.Organisation = newResource?.Organisation.replace(/[^\x00-\x7F]/g, "");
     var organisations = (newResource?.Organisation?.includes(';') || newResource?.Organisation?.includes(',')) ? newResource?.Organisation?.split(/[;,]+/).map( s => s.trim() ) : [ newResource?.Organisation?.trim() ]; //split orgainsation by ; or , OR just trim the single organisation. 
 
     var post_data = {
@@ -123,7 +131,7 @@ async function processMessage(newResource) {
       "comment_status": "closed",
       "status": "draft",
       "categories": convertCategoriesToArray(newResource.Pillar),
-      "tags": tags_numerical_array,
+      "tags": newResource.Keywords.length > 0 ? tags_numerical_array : '',
       "acf": {
         "year_published": newResource?.Year?.toString(),
         "language": cleanString(Buffer.from((newResource.Language ?? ''), 'utf-8').toString()),
